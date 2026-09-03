@@ -34,6 +34,8 @@ response = rag_pipeline.ask(
 )
 
 print("\nANSWER:")
+
+# rutivk
 print(response["answer"])
 
 print("\nSOURCES:")
