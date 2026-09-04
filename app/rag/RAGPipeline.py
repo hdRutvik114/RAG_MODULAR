@@ -12,13 +12,13 @@ class RAGPipeline:
         
         #retriver
         
-        results=self.retriver(collection_name=collection_name,query=query,top_k=top_k)
+        results=self.retriver.query_retriever(collection_name=collection_name,query=query,top_k=top_k)
         
         if not results:
             return ({"answer":"I could not find the relevant information in the doucments"
                 ,"sources":[]
             })
-        context="\n\n".join(results['text'] for result in results)
+        context="\n\n".join(result['text'] for result in results)
         
         prompt=f"""
             You are a helpful assistant answering questions about a document.
