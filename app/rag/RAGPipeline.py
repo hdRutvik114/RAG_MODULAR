@@ -7,7 +7,7 @@ class RAGPipeline:
         self.llm_service=llm_service
         
         
-    def ask(self,collection_name: str, query:str,top_k=4):
+    def ask(self,collection_name: str, query:str,top_k=5):
         
         
         #retriver

@@ -121,6 +121,7 @@ class QdrantVectorStore:
                     },
                 }
             )
+            # print(results)
 
         return results
     

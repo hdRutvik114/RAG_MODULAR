@@ -3,7 +3,8 @@ from app.vectorstore.qdrant import QdrantVectorStore
 from app.retrieval.retriever import VectorRetriever
 from app.generation.llm_service import LLMservice
 from app.rag.RAGPipeline import RAGPipeline
-
+from app.retrieval.bm25_retriever import BM25Retriever
+from app.retrieval.hybrid_retriever import HybridRetriever
 
 # Dependencies
 def fun():
@@ -12,18 +13,22 @@ def fun():
     
     vector_store = QdrantVectorStore()
     
+    
     retriever = VectorRetriever(
         vector_store=vector_store,
         embedding_model=embedding_service,
-        score_threshold=0.6
+        score_threshold=None
     )
-    
+    bm25_retriever=BM25Retriever()
     llm_service = LLMservice()
     
-    
+    hybrid_retriever = HybridRetriever(
+    vector_retriever=retriever,
+    bm25_retriever=
+)
     # Compose the application
     rag_pipeline = RAGPipeline(
-        retriever=retriever,
+        retriever=hybrid_retiever,
         llm_service=llm_service
     )
     
@@ -31,7 +36,7 @@ def fun():
     # Ask question
     response = rag_pipeline.ask(
         collection_name="doc_attention_paper_bdfaa68d8984",
-        query="How does scaled dot product attention work?",
+        query="How does self-attention work?",
         top_k=4
     )
     

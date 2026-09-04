@@ -12,6 +12,9 @@ class VectorRetriever(BaseRetriever):
         query_embedding=self.embedding_model.embed_query([query])[0]
         results=self.vectorstore.similarity_search(collection_name=collection_name,query_embeddings=query_embedding,top_k=top_k)
         
+        print(results)
+        for result in results:
+            print(f"{result['score']:.4f}")
         
         if self.score_threshold is not None:
             results=[result 
