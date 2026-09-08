@@ -19,6 +19,7 @@ def fun():
         embedding_model=embedding_service,
         score_threshold=None
     )
+    # key word based Finding inside the corpus or vector database
     bm25_retriever=BM25Retriever()
     llm_service = LLMservice()
     
