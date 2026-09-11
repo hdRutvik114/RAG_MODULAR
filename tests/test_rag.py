@@ -33,7 +33,7 @@ def fun():
         llm_service=llm_service
     )
     
-    
+    ddd=0
     # Ask question
     response = rag_pipeline.ask(
         collection_name="doc_attention_paper_bdfaa68d8984",
