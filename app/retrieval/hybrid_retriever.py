@@ -23,7 +23,7 @@ class HybridRetriever(BaseRetriever):
         )
 
         # 2. BM25 search
-        bm25_results = self.bm25_retriever.query_retriever(
+        bm25_results = self.bm25_retriever.query_retriever(collection_name=collection_name,
             query=query,
             top_k=top_k
         )
