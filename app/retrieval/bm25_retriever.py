@@ -1,24 +1,25 @@
-from rank_bm25 import BM25Okapi
 from app.retrieval.baseretreiver import BaseRetriever
 
 
 class BM25Retriever(BaseRetriever):
 
-    def __init__(self, documents):
-        self.documents = documents
+    def __init__(self, bm25_store):
+        self.bm25_store = bm25_store
 
-        tokenized_documents = [
-            document.page_content.lower().split()
-            for document in documents
-        ] 
+    def query_retriever(
+        self,
+        collection_name: str,
+        query: str,
+        top_k: int = 4
+    ):
+        data = self.bm25_store.load_index(collection_name)
 
-        self.bm25 = BM25Okapi(tokenized_documents)
-
-    def query_retriever(self, query: str, top_k: int = 4):
+        bm25 = data["bm25"]
+        documents = data["documents"]
 
         tokenized_query = query.lower().split()
 
-        scores = self.bm25.get_scores(tokenized_query)
+        scores = bm25.get_scores(tokenized_query)
 
         ranked_indices = scores.argsort()[::-1][:top_k]
 
@@ -26,9 +27,9 @@ class BM25Retriever(BaseRetriever):
 
         for index in ranked_indices:
             results.append({
-                "text": self.documents[index].page_content,
+                "text": documents[index].page_content,
                 "score": float(scores[index]),
-                "metadata": self.documents[index].metadata
+                "metadata": documents[index].metadata
             })
 
         return results

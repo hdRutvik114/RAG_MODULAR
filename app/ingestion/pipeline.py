@@ -4,15 +4,19 @@ from app.ingestion.splitter import DocumentSplitter
 from app.embeddings.embeddings import EmbeddingService
 from app.vectorstore.qdrant import QdrantVectorStore
 from app.utils.hash_utils import get_pdf_collection_name
+from app.retrieval.bm25_retriever import BM25Retriever
+from app.retrieval.bm25_store import BM25Store
 
 class IngestionPipeline:
     
-    def __init__(self,loader : PDFLoader,splitter : DocumentSplitter, embeddings : EmbeddingService,vectorstore :  QdrantVectorStore):  
+    def __init__(self,loader : PDFLoader,splitter : DocumentSplitter, embeddings : EmbeddingService,vectorstore :  QdrantVectorStore,bm25retriever:BM25Retriever,bm25store:BM25Store):  
         self.loader=loader
         self.splitter=splitter
         self.embeddings=embeddings
         self.vectorstore=vectorstore
+        self.bm25_retriever=bm25retriever
         self.collection_name=None
+        self.bm25_store=self.bm25_retriever
         
     
     def process(self,filepath:str):
@@ -28,7 +32,7 @@ class IngestionPipeline:
                 f"Collection '{collection_name}' already exists."
             )
             print("Skipping ingestion.")
-            
+            # -
             return {
             "collection_name": collection_name,
             "status": "already_exists"
@@ -40,7 +44,7 @@ class IngestionPipeline:
         chunks=self.splitter.split(documents)
         
         
-        
+        self.bm25_store.create_index(collection_name,chunks)
         #Embeddings
         print("4.came here ")
         chunk_PageContent=[chunk.page_content for chunk in chunks]
