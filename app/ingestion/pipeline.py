@@ -16,6 +16,7 @@ class IngestionPipeline:
         self.bm25_retriever=bm25retriever
         self.collection_name=None
         
+        
     
     def process(self,filepath:str):
         #loader
@@ -30,7 +31,7 @@ class IngestionPipeline:
                 f"Collection '{collection_name}' already exists."
             )
             print("Skipping ingestion.")
-            
+            # -
             return {
             "collection_name": collection_name,
             "status": "already_exists"
