@@ -4,14 +4,16 @@ from app.ingestion.splitter import DocumentSplitter
 from app.embeddings.embeddings import EmbeddingService
 from app.vectorstore.qdrant import QdrantVectorStore
 from app.utils.hash_utils import get_pdf_collection_name
+from app.retrieval.bm25_retriever import BM25Retriever
 
 class IngestionPipeline:
     
-    def __init__(self,loader : PDFLoader,splitter : DocumentSplitter, embeddings : EmbeddingService,vectorstore :  QdrantVectorStore):  
+    def __init__(self,loader : PDFLoader,splitter : DocumentSplitter, embeddings : EmbeddingService,vectorstore :  QdrantVectorStore,bm25retriever:BM25Retriever):  
         self.loader=loader
         self.splitter=splitter
         self.embeddings=embeddings
         self.vectorstore=vectorstore
+        self.bm25_retriever=bm25retriever
         self.collection_name=None
         
     
