@@ -1,30 +1,32 @@
-from app.ingestion.pipeline import  IngestionPipeline
+from pathlib import Path
 from app.ingestion.splitter import DocumentSplitter 
 from app.ingestion.loader import PDFLoader
 from app.embeddings.embeddings import EmbeddingService
 
-loader=PDFLoader()
 
-splitter=DocumentSplitter()
+def test_loader_and_splitter():
+    loader = PDFLoader()
+    splitter = DocumentSplitter(chunk_size=500, overlap=50)
 
-pipeline=IngestionPipeline(loader,splitter)
+    pdf_path = Path("data/documents/sample_large.pdf")
+    if not pdf_path.exists():
+        pdf_path = next(Path("data/documents").glob("*.pdf"))
 
-chunks=pipeline.process("data/documents/attention_paper.pdf")
+    documents = loader.load(str(pdf_path))
+    assert len(documents) > 0
 
-# for i,chunk in enumerate(chunks):
-    
-#     if(i==3):
-#         break
-#     print(f"\nchunk------ {i}------")
-#     print(chunk.page_content[:300])
-#     print(f"Metadata:{chunk.metadata}")
+    chunks = splitter.split(documents)
+    assert len(chunks) > 0
+    print(f"Loaded {len(documents)} pages, split into {len(chunks)} chunks.")
 
 
-texts=[chunk.page_content for chunk in chunks]
-print("-"*15)
-print(texts)
+def test_embedding_service():
+    embedder = EmbeddingService()
+    query_vec = embedder.embed_query("Hello world")
+    assert query_vec is not None
+    assert len(query_vec) == 384
 
-embedder=EmbeddingService()
-embedder.embed_doucments(texts)
-query=embedder.embed_query("HI bro ")
-print(query)
+
+if __name__ == "__main__":
+    test_loader_and_splitter()
+    test_embedding_service()

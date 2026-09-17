@@ -1,28 +1,54 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function App() {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [querying, setQuerying] = useState(false);
-  const [pdfId, setPdfId] = useState('');
-  const [question, setQuestion] = useState('What is this document about?');
+  // activeDocument stores { id: string, name: string }
+  const [activeDoc, setActiveDoc] = useState(null);
+  const [question, setQuestion] = useState('What are the main key points of this document?');
   const [answer, setAnswer] = useState('');
   const [sources, setSources] = useState([]);
-  const [uploadMessage, setUploadMessage] = useState('');
   const [error, setError] = useState('');
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [backendStatus, setBackendStatus] = useState('checking');
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError('Please choose a PDF file first.');
-      return;
+  const fileInputRef = useRef(null);
+  const questionInputRef = useRef(null);
+
+  // Check backend connectivity on load
+  useEffect(() => {
+    fetch('/api/health')
+      .then((res) => {
+        if (res.ok) setBackendStatus('connected');
+        else setBackendStatus('error');
+      })
+      .catch(() => setBackendStatus('disconnected'));
+  }, []);
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
+        setError('Please select a valid PDF file.');
+        return;
+      }
+      setFile(selectedFile);
+      setError('');
+      // Auto trigger upload once selected
+      uploadFile(selectedFile);
     }
+  };
 
+  const uploadFile = async (fileToUpload) => {
     setUploading(true);
     setError('');
     setUploadMessage('');
+    setAnswer('');
+    setSources([]);
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUpload);
 
     try {
       const response = await fetch('/api/upload-pdf', {
@@ -36,18 +62,30 @@ export default function App() {
         throw new Error(data.detail || 'Upload failed.');
       }
 
-      setPdfId(data.pdf_id);
-      setUploadMessage(`Uploaded successfully. PDF ID: ${data.pdf_id}`);
+      // Store active document automatically - user never needs to copy/paste IDs
+      setActiveDoc({
+        id: data.pdf_id,
+        name: fileToUpload.name,
+      });
+
+      setUploadMessage(`"${fileToUpload.name}" indexed successfully!`);
+      // Focus question box for instant querying
+      setTimeout(() => questionInputRef.current?.focus(), 100);
     } catch (err) {
-      setError(err.message || 'Could not upload the PDF.');
+      setError(err.message || 'Could not upload and index the PDF.');
     } finally {
       setUploading(false);
     }
   };
 
   const handleQuery = async () => {
-    if (!pdfId || !question.trim()) {
-      setError('Upload a PDF and enter a question before querying.');
+    if (!question.trim()) {
+      setError('Please enter a question.');
+      return;
+    }
+
+    if (!activeDoc?.id) {
+      setError('Please upload a PDF document first.');
       return;
     }
 
@@ -60,7 +98,11 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pdf_id: pdfId, question }),
+        // Automatically pass activeDoc.id
+        body: JSON.stringify({
+          pdf_id: activeDoc.id,
+          question: question.trim(),
+        }),
       });
 
       const data = await response.json();
@@ -72,74 +114,167 @@ export default function App() {
       setAnswer(data.answer || 'No answer returned.');
       setSources(data.sources || []);
     } catch (err) {
-      setError(err.message || 'Query failed.');
+      setError(err.message || 'Failed to get answer from the document.');
     } finally {
       setQuerying(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      handleQuery();
+    }
+  };
+
+  const handleResetDocument = () => {
+    setActiveDoc(null);
+    setFile(null);
+    setAnswer('');
+    setSources([]);
+    setUploadMessage('');
+    setError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   return (
     <div className="app-shell">
       <div className="card">
-        <h1>RAG PDF Assistant</h1>
+        {/* Header */}
+        <header className="header">
+          <div className="title-area">
+            <h1>RAG PDF Assistant</h1>
+            <p>Hybrid Search + AI Document Q&A</p>
+          </div>
+          <div className={`status-badge ${backendStatus === 'connected' ? 'status-connected' : 'status-error'}`}>
+            <span className="status-dot"></span>
+            Backend: {backendStatus}
+          </div>
+        </header>
 
-        <div className="section">
-          <label htmlFor="pdf-upload">Upload a PDF</label>
-          <input
-            id="pdf-upload"
-            type="file"
-            accept="application/pdf"
-            onChange={(event) => setFile(event.target.files?.[0] || null)}
-          />
-          <button onClick={handleUpload} disabled={uploading || !file}>
-            {uploading ? 'Uploading...' : 'Upload PDF'}
-          </button>
+        {/* Upload Section */}
+        {!activeDoc ? (
+          <div
+            className="dropzone"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="file-input"
+              onChange={handleFileChange}
+            />
+            <div className="dropzone-content">
+              <span className="upload-icon">📄</span>
+              <strong style={{ fontSize: '15px' }}>
+                {uploading ? 'Processing & Indexing PDF...' : 'Click to Upload PDF Document'}
+              </strong>
+              <span style={{ fontSize: '12.5px', color: '#94a3b8' }}>
+                {uploading ? 'Generating embeddings & BM25 indices...' : 'PDF files will be automatically indexed and ready for questions'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          /* Active Document Banner - Automatic State */
+          <div className="active-doc-card">
+            <div className="doc-info">
+              <span className="doc-icon">📕</span>
+              <div className="doc-details">
+                <h4>{activeDoc.name}</h4>
+                <p>✓ Indexed & Active for questions</p>
+              </div>
+            </div>
+            <button
+              className="change-btn"
+              onClick={handleResetDocument}
+              title="Upload a different PDF"
+            >
+              Upload Different PDF
+            </button>
+          </div>
+        )}
+
+        {uploadMessage && !error && (
+          <div className="alert-success">✓ {uploadMessage}</div>
+        )}
+
+        {/* Question Area */}
+        <div className="query-section">
+          <label className="query-label" htmlFor="question-input">
+            Ask a Question about the Document
+          </label>
+          <div className="query-input-wrapper">
+            <textarea
+              id="question-input"
+              ref={questionInputRef}
+              rows={3}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                activeDoc
+                  ? `Ask anything about "${activeDoc.name}"...`
+                  : 'Upload a PDF above, then ask your question here...'
+              }
+            />
+          </div>
+
+          <div className="action-row">
+            <span className="shortcut-tip">Tip: Press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to ask</span>
+            <button
+              className="ask-btn"
+              onClick={handleQuery}
+              disabled={querying || !activeDoc || !question.trim()}
+            >
+              {querying ? (
+                <>
+                  <span>Searching & Generating...</span>
+                </>
+              ) : (
+                <>
+                  <span>Ask Question</span>
+                  <span>→</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {uploadMessage && <p className="success">{uploadMessage}</p>}
+        {error && <div className="alert-error">⚠️ {error}</div>}
 
-        <div className="section">
-          <label htmlFor="pdf-id">PDF ID</label>
-          <input
-            id="pdf-id"
-            value={pdfId}
-            onChange={(event) => setPdfId(event.target.value)}
-            placeholder="The PDF ID returned by the backend"
-          />
-        </div>
-
-        <div className="section">
-          <label htmlFor="question">Ask a question</label>
-          <textarea
-            id="question"
-            rows={4}
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-          />
-          <button onClick={handleQuery} disabled={querying || !pdfId}>
-            {querying ? 'Searching...' : 'Ask question'}
-          </button>
-        </div>
-
-        {error && <p className="error">{error}</p>}
-
+        {/* Answer & Sources Result */}
         {answer && (
-          <div className="result-box">
-            <h2>Answer</h2>
-            <p>{answer}</p>
+          <div className="result-card">
+            <div className="result-header">
+              <span>🤖</span>
+              <h3>Generated Answer</h3>
+            </div>
+            <div className="answer-body">{answer}</div>
 
             {sources.length > 0 && (
-              <div>
-                <h3>Sources</h3>
-                <ul>
-                  {sources.map((source, index) => (
-                    <li key={`${source.text}-${index}`}>
-                      <strong>Score:</strong> {Number(source.score || 0).toFixed(4)}
-                      <br />
-                      {source.text.slice(0, 240)}
-                    </li>
-                  ))}
-                </ul>
+              <div className="sources-container">
+                <div className="sources-title">Retrieved Evidence & Citations</div>
+                {sources.map((source, index) => {
+                  const score = source.rrf_score ?? source.score ?? 0;
+                  const page = source.metadata?.page;
+                  return (
+                    <div className="source-item" key={index}>
+                      <div className="source-meta">
+                        <span className="score-tag">
+                          Match Score: {Number(score).toFixed(4)}
+                        </span>
+                        {page !== undefined && (
+                          <span className="page-tag">Page {Number(page) + 1}</span>
+                        )}
+                      </div>
+                      <p className="source-snippet">
+                        {source.text || ''}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -20,21 +20,22 @@ class EmbeddingService:
             print(f"The model didnt load : {e}")
             raise
         
-    def embed_doucments(self,texts:list[str])->list:
+    def embed_documents(self, texts: list[str]) -> list:
         if self.model is None:
-            raise ValueError("No model Found bro")
+            raise ValueError("No embedding model found")
         try:
-            embeddings=self.model.encode(texts,show_progress_bar=True)
-            print(f"Length of documents{len(embeddings)}")
+            embeddings = self.model.encode(texts, show_progress_bar=False)
+            print(f"Length of documents: {len(embeddings)}")
             return embeddings
         except Exception as e:
-            print(f"Error while embeddings{e}")
+            print(f"Error while embeddings: {e}")
             raise
         
-    def embed_query(self,query:str):
+    # Alias for backward compatibility
+    embed_doucments = embed_documents
+
+    def embed_query(self, query: str | list[str]):
         if not self.model:
-            raise ValueError("Ebedding model is loaded")
+            raise ValueError("Embedding model is not loaded")
         
-        return self.model.encode(query)
-    
-    
+        return self.model.encode(query)

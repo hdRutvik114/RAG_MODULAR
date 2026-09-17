@@ -6,3 +6,4 @@ fastapi
 python-multipart
 pydantic-settings
 pypdf
+boto3

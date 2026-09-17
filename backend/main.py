@@ -21,6 +21,17 @@ from app.retrieval.hybrid_retriever import HybridRetriever
 from app.retrieval.retriever import VectorRetriever
 from app.utils.hash_utils import get_pdf_collection_name
 from app.vectorstore.qdrant import QdrantVectorStore
+from app.core.config import settings
+import os
+from io import BytesIO
+try:
+    import boto3
+except Exception:
+    boto3 = None
+import logging
+
+# configure root logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -44,9 +55,10 @@ class FallbackLLM:
 class RAGBackendService:
     def __init__(self) -> None:
         self.embedding_service = EmbeddingService()
+        # Use configured Qdrant settings if provided
         self.vector_store = QdrantVectorStore(
-            url=None,
-            api_key=None,
+            url=settings.QDRANT_URL,
+            api_key=settings.QDRANT_API_KEY,
             local_path=QDRANT_LOCAL_PATH,
         )
         self.bm25_store = BM25Store(base_path=BM25_STORE_PATH)
@@ -61,6 +73,8 @@ class RAGBackendService:
             bm25_retriever=self.bm25_retriever,
         )
         self.llm_service = self._build_llm_service()
+        # track the most recently uploaded collection id for default queries
+        self.last_uploaded_pdf_id: str | None = None
 
     def _build_llm_service(self):
         try:
@@ -81,6 +95,36 @@ class RAGBackendService:
 
         result = pipeline.process(str(file_path))
         pdf_id = pipeline.collection_name or get_pdf_collection_name(str(file_path))
+        # remember last uploaded pdf id
+        self.last_uploaded_pdf_id = pdf_id
+
+        if isinstance(result, dict):
+            status = result.get("status", "indexed")
+        else:
+            status = "indexed"
+
+        return {
+            "pdf_id": pdf_id,
+            "collection_name": pdf_id,
+            "status": status,
+            "message": "PDF uploaded and indexed successfully.",
+        }
+
+    def ingest_pdf_bytes(self, data: bytes, filename: str | None = None) -> dict[str, Any]:
+        pipeline = IngestionPipeline(
+            loader=PDFLoader(),
+            splitter=DocumentSplitter(),
+            embeddings=self.embedding_service,
+            vectorstore=self.vector_store,
+            bm25retriever=self.bm25_retriever,
+            bm25store=self.bm25_store,
+        )
+        pipeline.bm25_store = self.bm25_store
+
+        result = pipeline.process_bytes(data, filename=filename)
+        pdf_id = pipeline.collection_name
+        # remember last uploaded pdf id
+        self.last_uploaded_pdf_id = pdf_id
 
         if isinstance(result, dict):
             status = result.get("status", "indexed")
@@ -131,8 +175,12 @@ class RAGBackendService:
         }
 
 
+from typing import Any, Optional
+from pydantic import BaseModel, Field
+
+
 class QueryRequest(BaseModel):
-    pdf_id: str
+    pdf_id: Optional[str] = Field(default=None, description="Optional PDF ID; defaults to the last uploaded PDF")
     question: str
 
 
@@ -159,13 +207,35 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
     safe_name = file.filename.replace(" ", "_")
-    upload_path = UPLOAD_DIR / safe_name
 
-    with upload_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # read bytes from upload
+    file.file.seek(0)
+    data = await file.read()
 
     try:
-        result = backend_service.ingest_pdf(upload_path)
+        # ingest in-memory (no local save)
+        result = backend_service.ingest_pdf_bytes(data, filename=safe_name)
+
+        # if S3 is configured, also upload the object for remote storage (best-effort)
+        s3_url = None
+        bucket = os.getenv("S3_BUCKET")
+        if bucket and boto3 is not None:
+            try:
+                s3 = boto3.client(
+                    "s3",
+                    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                    region_name=os.getenv("AWS_REGION"),
+                )
+                key = f"uploads/{safe_name}"
+                file.file.seek(0)
+                s3.upload_fileobj(BytesIO(data), bucket, key)
+                s3_url = f"s3://{bucket}/{key}"
+                result["s3_url"] = s3_url
+            except Exception as exc_s3:
+                # don't fail ingestion because of S3 issues
+                result["s3_error"] = str(exc_s3)
+
         return result
     except Exception as exc:  # pragma: no cover - defensive guard
         raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
@@ -173,11 +243,13 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.post("/api/query")
 async def query_pdf(payload: QueryRequest):
-    if not payload.pdf_id or not payload.question:
-        raise HTTPException(status_code=400, detail="pdf_id and question are required.")
+    # allow pdf_id to be optional — fall back to last uploaded pdf
+    pdf_id = payload.pdf_id or backend_service.last_uploaded_pdf_id
+    if not pdf_id or not payload.question:
+        raise HTTPException(status_code=400, detail="pdf_id (or a previously uploaded PDF) and question are required.")
 
     try:
-        return backend_service.query_pdf(pdf_id=payload.pdf_id, question=payload.question)
+        return backend_service.query_pdf(pdf_id=pdf_id, question=payload.question)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive guard

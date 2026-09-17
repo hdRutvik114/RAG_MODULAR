@@ -12,3 +12,6 @@ data\documents
 .env 
 app/.env
 app/.env
+node_modules
+.frontend\node_modules
+app\.env
